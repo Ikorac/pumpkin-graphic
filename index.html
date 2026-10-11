@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<!-- Sub please? -->
+<!-- Hunter.js graphic -->
+
+<html>
+
+<script>
+let pumpkinX = 0;
+let pumpkinY = 0;
+let pumpkinZ = 0;  
+
+let candleY = -1.5;
+let candleIntensity = 3;
+
+let moonLight = 0.5;
+
+</script>
+    <head>
+        <meta charset="utf-8">
+        
+        <title>wip</title>
+		<!-- Import babylon, processing.js and cannon.js -->
+        <script src = 'https://cdn.jsdelivr.net/npm/babylonjs@6.23.0/babylon.min.js'></script>
+        <script src = "https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/processing.js/1.4.8/processing.min.js"></script>
+        
+        
+    </head>
+	<!-- Blocks out scroll bar and adjusts screen size -->
+    <style>
+        body{
+            overflow:hidden;
+            margin:0;
+        }
+		/* auto sizing */
+        #renderCanvas {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        #texture-canvas {
+            width: 400px;
+            height: 400px;
+            display: none;
+        }
+    </style>
+    <!--@ChoViolin's PJS texture function -->
+        <script type>
+        class PJSTexture {
+            constructor(id, options, scene) {
+                this.id = id;
+                this.width = options.width || 400;
+                this.height = options.height || 400;
+                this.frameRate = options.frameRate || 60;
+                this.scene = scene;
+				this.texture;
+            }
+            
+            createTexture(code) {
+				let width = this.width;
+				let height = this.height;
+				let frameRate = this.frameRate;
+                let textureCanvas = document.createElement("canvas");
+                document.body.appendChild(textureCanvas);
+                textureCanvas.id = this.id;
+				textureCanvas.width = width;
+				textureCanvas.height = height;
+				textureCanvas.style.overflow = "hidden";
+				
+				let dt = new BABYLON.DynamicTexture(this.id, {width: this.width, height: this.height}, this.scene, true);
+				let ctx = dt.getContext();
+                
+                const pjs = new Processing(textureCanvas, function(p) {  
+                
+                    p.setup = function() {
+                        p.size(width, height);
+                        p.frameRate(frameRate);
+                        p.smooth();
+                    };
+                    
+                    p.draw = function() {
+                        code(p);
+                        ctx.clearRect(0, 0, width, height);
+                        ctx.drawImage(textureCanvas, 0, 0, width, height);
+                        dt.update(false);
+                    };
+                });
+				
+				this.texture = dt;
+				return this.texture;
+            }
+
+			createMaterial(code) {
+				let material = new BABYLON.StandardMaterial(this.id + "-material", this.scene);
+				material.diffuseTexture = this.createTexture(code);
+				
+				material.diffuseTexture.uScale = 1;
+				material.diffuseTexture.vScale = 1;
+				return material;
+			}
+			
+			setUVscale(uScale, vScale) {
+                if (!this.texture) return;
+                this.texture.uScale = uScale ?? 1;
+                this.texture.vScale = vScale ?? 1;
+				this.texture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+				this.texture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+            }
+        }
+    </script>
+    <script>
+    function degrees(angle) {
+    	return angle * (180 / Math.PI);
+    }
+    function radians(angle) {
+    	return angle * (Math.PI / 180);
+    }
+    </script>
+    
+	<!-- Main 3d js code -->
+    <script>
+    let frameCount = 0;
+    
+
+//helps with the lag
+window.addEventListener('DOMContentLoaded', function(){
+const canvas = document.getElementById("renderCanvas");
+canvas.addEventListener("wheel", function (e) {
+	e.preventDefault()
+});
+const engine = new BABYLON.Engine(canvas, true, {
+	stencil: false,
+	lowQuality: true,
+	antialias: false, 
+	preserveDrawingBuffer: true
+});
+//as the name suggests, resize canvas. Or rather, size the engine to fit the canvas
+function resizeCanvas() {
+	canvas.width = window.innerWidth;
+	canvas.height = window.innerHeight;
+	engine.resize();
+}
+
+
+// Run on load and whenever the user resizes the windowwindow.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+//stuff
+canvas.getContext = function(type, data) {
+	data.preserveDrawingBuffer = true;
+	return HTMLCanvasElement.prototype.getContext.call(canvas, type, data);
+}
+	
+function run(){
+
+    let click = false;
+    
+	const scene = new BABYLON.Scene(engine);//new scene
+	
+	//From now on all the code will go here
+	const gravityVector = new BABYLON.Vector3(0,-10,0);
+	scene.enablePhysics(gravityVector, new BABYLON.CannonJSPlugin());
+
+	//for key inputs
+	var keys = {};
+	window.addEventListener('keydown', function(e) {
+		keys[e.key] = true;
+	});
+	window.addEventListener('keyup', function(e) {
+		keys[e.key] = false;
+	});
+
+	//background color
+	//all BABYLON.color3() is a fraction 1, instead of 255. So, you can divide your normal rbg values by 255. There is no Alpha
+	scene.clearColor = new BABYLON.Color3(0, 0, 0);
+
+	
+	
+	//lighting
+	var light = new BABYLON.HemisphericLight("ambientLight", new BABYLON.Vector3(0, 1, 0), scene);
+    light.intensity = 0.2;
+    //const light2 = new BABYLON.DirectionalLight("light", new BABYLON.Vector3(0, 0, 0), scene);
+
+	//const light = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-0.2, -5000, 0.2), scene);
+	//light.position = new BABYLON.Vector3(20, 40, 20); //for shadows
+	
+	
+	let cubes = [];
+	
+	//3D function
+	function new3D(config){
+	    let obj = {
+			x: config.x || 0,
+			y: config.y || 0,
+			z: config.z || 0,
+			w: config.w || 1,
+			h: config.h || 1,
+			d: config.d || 1,
+			xRot: config.xRot || 0,
+			yRot: config.yRot || 0,
+			zRot: config.zRot || 0,
+			clr: config.clr || [255, 0, 0],
+			mass: config.mass || 0,
+			friction: config.friction || 0.3,
+			restitution: config.restitution || 0,
+			glow: config.glow || false,
+			glowPower: config.glowPower || 0,
+			roughness: config.roughness || 0,
+			metallic: config.metallic || 0,
+			physics: config.physics || false,
+			type: config.type || "cube",
+			material: config.material || "standard",
+			seg: config.seg || 10,
+			dt: config.dt || 1,
+			db: config.db || 1,
+			sleep: config.sleep || false,
+			tessellation: config.tessellation || 20,
+		};
+		let Obj;
+		switch(obj.type) {
+				case "cylinder":
+					Obj = BABYLON.MeshBuilder.CreateCylinder("cylinder", {height: obj.h, diameterTop: obj.dt, diameterBottom: obj.db, tessellation: obj.tessellation}, scene);
+				    Obj.material = new BABYLON.StandardMaterial("cylinderMaterial", scene);
+				break;
+				case "sphere":
+						Obj = BABYLON.MeshBuilder.CreateSphere('sphere', {segments: obj.seg, diameter: obj.d}, scene);
+						Obj.material = new BABYLON.StandardMaterial("sphereMaterial", scene);
+						
+				break;
+				default:
+					Obj = BABYLON.MeshBuilder.CreateBox('Box', {width: obj.w, height: obj.h, depth: obj.d}, scene);
+					Obj.material = new BABYLON.StandardMaterial("BoxMaterial", scene);
+				if(obj.mass === 0 ) {
+					cubes.push({
+						x: obj.x,
+						y: obj.y,
+						z: obj.z,
+						w: obj.w,
+						h: obj.h,
+						d: obj.d,
+					});
+				}
+				
+		}
+		Obj.material.diffuseColor = new BABYLON.Color3(obj.clr[0] / 255, obj.clr[1] / 255, obj.clr[2] / 255);
+		Obj.position = new BABYLON.Vector3(obj.x, obj.y, obj.z);
+		Obj.rotation = new BABYLON.Vector3(obj.xRot, obj.yRot, obj.zRot);
+		
+		if(obj.physics) {
+			Obj.physicsImpostor = new BABYLON.PhysicsImpostor(Obj, BABYLON.PhysicsImpostor.BoxImpostor, obj, scene);
+		}
+		if(obj.sleep) {
+			Obj.sleep();
+		}
+		if(obj.makeShadow) {
+			shadowGenerator.addShadowCaster(Obj); 
+		}
+		if(!obj.haveShadow) {
+			Obj.receiveShadows = true;
+		}
+		if(obj.glow) {
+			const material = new BABYLON.StandardMaterial("glowMat", scene);
+			material.emissiveColor = new BABYLON.Color3(obj.clr[0] / 255, obj.clr[1] / 255, obj.clr[2] / 255);
+			Obj.material = material;
+			glowLayer.addIncludedOnlyMesh(Obj);
+		}
+		return Obj;
+	}
+	function cubeCollide(p1X, p1Y, p1Z, p1W, p1H, p1D, p2X, p2Y, p2Z, p2W, p2H, p2D){
+		return(p1X + p1W / 2 > p2X - p2W && p1X - p1W / 2 < p2X + p2W && p1Y + p1H / 2 > p2Y - p2H && p1Y - p1H / 2 < p2Y + p2H && p1Z + p1D / 2 > p2Z - p2D && p1Z - p1D / 2 < p2Z + p2D); 
+	}
+	
+	function cubesCollide(obj1, obj2) {
+		return cubeCollide(obj1.x, obj1.y, obj1.z, obj1.w, obj1.h, obj1.d, obj2.x, obj2.y, obj2.z, obj2.w, obj2.h, obj2.d);        
+	}
+
+
+	const camera = new BABYLON.ArcRotateCamera("Camera",
+		Math.PI / 2,
+		Math.PI / 3,
+		20,
+		0,
+	scene);
+	camera.lowerRadiusLimit = 10;
+	camera.upperRadiusLimit = 40;
+	camera.attachControl(canvas, true); 
+	
+    //@ChoViolin
+	function cut(obj1, obj2) {
+	    const csg1 = BABYLON.CSG.FromMesh(obj1);
+		const csg2 = BABYLON.CSG.FromMesh(obj2);
+
+		const subtractedCSG = csg1.subtract(csg2);
+
+		const resultMesh = subtractedCSG.toMesh("cutResult", obj1.material, scene);
+
+		obj1.dispose();
+		obj2.dispose();
+
+		return resultMesh;
+	}
+	
+    //PUMKIN 
+	var pumpkinParts = [
+	//pumkin
+      new3D({physics: true, x: 1.5, y: 0, z: 1.5, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: -1.5, y: 0, z: 1.5, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: 1.5, y: 0, z: -1.5, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: -1.5, y: 0, z: -1.5, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: -0, y: 0, z: -2, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: -0, y: 0, z: 2, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: -2, y: 0, z: 0, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      new3D({physics: true, x: 2, y: 0, z: 0, type: "sphere", clr: [189, 96, 15], seg: 10, d: 6}),
+      
+    ];
+    
+    var pumpkin = BABYLON.Mesh.MergeMeshes(pumpkinParts, true, true);
+    //stem
+    new3D({physics: true, y: 2.6 + pumpkinY, xRot: 12, clr: [31, 158, 11], w: 1, h: 1.5, d: 0.3, z: -0.5 + pumpkinZ, x: pumpkinX});
+    new3D({physics: true, y: 3.6 + pumpkinY, xRot: 0, clr: [31, 158, 11], w: 1, h: 1, d: 0.3, z: -0.855 + pumpkinZ, x: pumpkinX});
+    
+    //reset Positions
+    pumpkin.position = new BABYLON.Vector3(pumpkinX, pumpkinY, pumpkinZ);
+    
+    
+    var mouthParts = [
+      //eyes
+      new3D({type: "cylinder", tessellation: 3, db: 1.8, dt: 1.8, h: 2, xRot: 1.57, zRot: 0.01, x: 2, clr: [0, 0, 0], z: 3, y: 2}),
+      new3D({type: "cylinder", tessellation: 3, db: 1.8, dt: 1.8, h: 2, xRot: 1.57, zRot: -0.01, x: -2, clr: [0, 0, 0], z: 3, y: 2}),
+      //hole inside
+      new3D({type: "cylinder", tessellation: 13, db: 4.7, dt: 4.6, h: 4, x: 0, clr: [0, 0, 0], z: 0, y: 0}),
+      //mouth
+      new3D({type: "cylinder", tessellation: 3, db: 2.3, dt: 2.3, h: 2, xRot: 1.57, zRot: -0.07, x: 0, clr: [0, 0, 0], z: 4, y: -1}),
+      //nose
+      new3D({type: "cylinder", tessellation: 13, db: 0.8, dt: 0.5, h: 8, xRot: 1.57, zRot: -0.07, x: 0, clr: [0, 0, 0], z: 4, y: 1})
+    ];
+    
+    var mouth = BABYLON.Mesh.MergeMeshes(mouthParts, true, true);
+    mouth.position = new BABYLON.Vector3(pumpkinX, pumpkinY, pumpkinZ);  
+    
+    var newPumpkin = cut(pumpkin, mouth);
+    newPumpkin.position.set(pumpkinX, pumpkinY, pumpkinZ);
+    
+
+     
+	var candle = new3D({type: "sphere", d: 1, y: candleY, seg: 8, clr: [255, 190, 70]});
+    let candleLight = new BABYLON.PointLight("candleLight", new BABYLON.Vector3(pumpkinX, candleY, pumpkinZ), scene);
+    candleLight.diffuse = new BABYLON.Color3(1, 0.75, 0.3);
+    candleLight.intensity = 7;
+    candleLight.range = 15;
+	
+    
+    //MOON
+    var moon = new3D({type: "sphere", d: 5, clr: [1055, 1055, 1055], seg: 7, y: 40, z: 40, x: 20});
+    let moonlight = new BABYLON.PointLight("candleLight", new BABYLON.Vector3(moon.position.x, moon.position.y, moon.position.z), scene);
+    moonlight.diffuse = new BABYLON.Color3(1, 1, 1);
+    moonlight.intensity = moonLight;
+    
+    
+    
+    //STARS
+    function makeStarTexture() {
+        const size = 1024;
+        const dt = new BABYLON.DynamicTexture("stars", size, scene, false);
+        const ctx = dt.getContext();
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, size, size);
+        for (let i = 0; i < 100; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = Math.random() * 1.3 + 0.2;
+            const b = Math.floor(Math.random() * 155) + 100;
+            const tints = [[b,b,b],[b,b*0.85,b*0.7],[b*0.8,b*0.85,b]];
+            const c = tints[Math.floor(Math.random()*tints.length)];
+            ctx.fillStyle = "rgb(" + Math.floor(c[0]) + "," + Math.floor(c[1]) + "," + Math.floor(c[2]) + ")";
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        dt.update(false);
+        return dt;
+    }
+    
+    const stars = BABYLON.MeshBuilder.CreateSphere("starSphere", {diameter: 600, segments: 16}, scene);
+    const starMat = new BABYLON.StandardMaterial("starMat", scene);
+    starMat.emissiveTexture = makeStarTexture(); // emissive = ignores lighting, always bright
+    starMat.diffuseColor = BABYLON.Color3.Black();
+    starMat.specularColor = BABYLON.Color3.Black();
+    starMat.backFaceCulling = false;
+    stars.material = starMat;
+	
+    
+    //SIDEWALK
+    new3D({w: 15, h: 0.2, d: 20, clr: [100, 100, 100], y: -3});
+    
+	//this is our "draw" function 
+	scene.registerAfterRender(function() {	
+    	candleLight.intensity = (Math.random() * candleIntensity) + candleIntensity;
+		
+        stars.rotation.y += 0.0005;
+        
+        
+        if (frameCount % 8 === 0) {
+            const ctx = starMat.emissiveTexture.getContext();
+            for (let i = 0; i < 6; i++) {
+                const x = Math.random() * 1024, y = Math.random() * 1024;
+                ctx.fillStyle = "black";
+                ctx.fillRect(x - 2, y - 2, 4, 4);
+                ctx.fillStyle = "rgb(" + (200 + Math.random()*55|0) + ", 200, 255)";
+                ctx.beginPath();
+                ctx.arc(x, y, Math.random() * 1.3 + 0.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            starMat.emissiveTexture.update(false);
+        }	
+		
+		click = false;
+        frameCount ++;
+	});
+	//locks pointer
+	function pointerLock(){
+		//canvas.requestPointerLock();
+		click = true;
+	}
+	//lock 'em up tight
+	document.addEventListener("click", pointerLock);
+
+	//and return it all back
+	return scene;
+}
+//basically redfine everything
+const scene = run();
+
+//this tells BABYLON to hurry up and render already
+engine.runRenderLoop(function(){
+		scene.render();
+});
+});
+    </script>
+     
+    <body>
+        <canvas id = "renderCanvas"></canvas>
+        <!--Thumb script @Choviolin -->
+       window.parent.addEventListener('message', function(e) {
+        data = JSON.parse(e.data);
+        if(data.screenshot){
+        scene.render();
+        thumbnail = canvas.toDataURL('image/png', 1);
+        window.top.postMessage(thumbnail, 'https://www.khanacademy.org/');
+        }
+    });
+    </body>
+</html>
+
+
